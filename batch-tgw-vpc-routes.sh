@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # CloudShell / Bash: 按 VPC（可多选）批量为关联路由表添加指向 Transit Gateway 的 IPv4 路由。
-# 交互流程: 选区域 → 列 VPC → 多选 VPC → 列 TGW 并选择 → 输入 CIDR 列表 → 冲突策略 → 确认执行。
+# 交互流程: 选区域 → 列 VPC → 多选 VPC → 列 TGW 并选择 → 输入 CIDR 列表 → 冲突策略 → 确认执行 → 配置后验证。
 # - 默认区域: us-west-2, us-east-2（可通过环境变量 REGIONS 覆盖）
 # - 冲突检测: 同目的 CIDR 已存在且下一跳不是所选 TGW 时提示，并可选择跳过/替换/中止
 # - TGW: 从当前区域动态列举，交互选择
@@ -29,7 +29,7 @@ usage() {
   cat <<'EOF' >&2
 用法: batch-tgw-vpc-routes.sh [选项]
 
-交互流程: 选择区域 → 列出并多选 VPC（序号可用逗号或空格分隔，或输入 all 全选）→ 选择 TGW → 输入 CIDR 列表 → 冲突策略 → 确认执行。
+交互流程: 选择区域 → 列出并多选 VPC（序号可用逗号或空格分隔，或输入 all 全选）→ 选择 TGW → 输入 CIDR 列表 → 冲突策略 → 确认执行 → 配置后自动验证。
 
   -n, --dry-run              仅预览，不执行 create-route / replace-route
   -r, --regions <列表>       候选区域，逗号或空格分隔，例: ap-northeast-1 或 us-west-2,us-east-2
@@ -241,6 +241,52 @@ describe_rtb_one_line() {
   tags="$(echo "$json" | jq -r '.RouteTables[0].Tags // [] | map(select(.Key=="Name")) | .[0].Value // "-"')"
   routes="$(echo "$json" | jq -r --arg t "$tgw" '[.RouteTables[0].Routes[] | select((.TransitGatewayId // "") == $t) | .DestinationCidrBlock] | length')"
   printf '%s\t%s\t%s\t指向所选TGW:%s条\n' "$rtb" "$main" "$tags" "$routes"
+}
+
+# 配置完成后：按当前 API 结果核对每条 (路由表, CIDR) 是否指向所选 TGW。依赖全局 REGION、TGW_ID、SELECTED_VPCS、CIDRS、DRY_RUN。
+verify_routes_after_apply() {
+  local vpc_id rtb cidr st desc
+  local ok=0 miss=0 bad=0
+  local -a v_rtbs=()
+  echo
+  echo "========== 配置后验证（describe-route-tables） =========="
+  if [[ "$DRY_RUN" == "1" ]]; then
+    warn "当前为 DRY_RUN：未写入变更，以下为验证时刻云端实际状态。"
+  fi
+  for vpc_id in "${SELECTED_VPCS[@]}"; do
+    echo
+    info "VPC $vpc_id"
+    v_rtbs=()
+    mapfile -t v_rtbs < <(list_route_tables_for_vpc "$REGION" "$vpc_id")
+    for rtb in "${v_rtbs[@]}"; do
+      for cidr in "${CIDRS[@]}"; do
+        st="$(route_status_for_cidr "$REGION" "$rtb" "$cidr" "$TGW_ID")"
+        case "$st" in
+          same_tgw)
+            info "  $rtb  $cidr  -> OK（下一跳为所选 TGW）"
+            ok=$((ok + 1))
+            ;;
+          none)
+            warn "  $rtb  $cidr  -> 缺失（无该目的网段路由）"
+            miss=$((miss + 1))
+            ;;
+          conflict*)
+            desc="${st#conflict|}"
+            warn "  $rtb  $cidr  -> 非所选 TGW（$desc）"
+            bad=$((bad + 1))
+            ;;
+          *)
+            die "验证时未知状态: $st"
+            ;;
+        esac
+      done
+    done
+  done
+  echo
+  info "验证汇总: 指向所选 TGW=${ok} 条, 缺失=${miss} 条, 其他下一跳=${bad} 条"
+  if [[ "$DRY_RUN" != "1" ]] && ((miss > 0 || bad > 0)); then
+    warn "存在未指向所选 TGW 的项：可能曾选择「跳过冲突」、create-route/replace-route 失败，或 API 传播延迟。可稍后重跑本脚本或控制台核对。"
+  fi
 }
 
 list_tgws_menu() {
@@ -481,6 +527,8 @@ main() {
       done
     done
   done
+
+  verify_routes_after_apply
 
   info "完成。"
 }

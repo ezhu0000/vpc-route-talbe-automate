@@ -75,6 +75,7 @@ chmod +x apply-tgw-routes-to-vpcs.sh
 
 ## 行为说明
 
+- **配置后验证**：写入流程结束后会再次查询路由表，核对本次涉及的每个 CIDR 在各路由表上是否指向所选 TGW，并输出汇总；`--dry-run` 时验证的是执行前云端现状。
 - **作用范围**：所选 VPC 下，通过 `describe-route-tables`（`vpc-id` 过滤器）得到的**全部**关联路由表（含主表与各子网关联表）。
 - **TGW**：仅列出当前区域中 `State=available` 的 Transit Gateway；选择后会检查是否存在指向该 VPC 的 **VPC 类型** Attachment（`available` / `pending`），缺失时会警告并询问是否继续。
 - **CIDR 输入**：每行一个 IPv4 CIDR；`#` 开头为注释；空行结束。仅支持 IPv4（`DestinationCidrBlock`）。

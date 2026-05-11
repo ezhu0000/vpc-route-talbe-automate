@@ -77,6 +77,7 @@ chmod +x apply-tgw-routes-to-vpcs.sh
 6. **输入 CIDR**：每行一个 IPv4 CIDR，`#` 开头为注释，**单独一行空行**表示结束。
 7. 按 VPC 展示关联**路由表预览**（主表/子网表、名称、已指向所选 TGW 的 IPv4 条数等）。
 8. 选择**全局冲突策略**（见下文），确认后执行。
+9. **配置后验证**：再次查询路由表，逐条核对本次涉及的 CIDR 是否指向所选 TGW，并输出汇总（OK / 缺失 / 其他下一跳）。
 
 ### 命令行参数
 
@@ -152,7 +153,7 @@ chmod +x apply-tgw-routes-to-vpcs.sh
 
 ## 共同行为与注意
 
-- **仅 IPv4**：使用 `DestinationCidrBlock`，不支持 IPv6（若需 IPv6 需另写 `create-route` 的 IPv6 参数）。
+- **配置后验证**：`batch-tgw-vpc-routes.sh` 与 `apply-tgw-routes-to-vpcs.sh` 在配置流程结束后会再次调用 `describe-route-tables`，对每个相关路由表与每个目标 CIDR 检查下一跳是否为所选 TGW，并打印汇总条数；若干跑（`DRY_RUN` / `--dry-run`），说明文字会标明当前为变更前状态。
 - **幂等**：若该 CIDR **已指向同一 TGW**，跳过。
 - **最长前缀匹配**：汇总大网段（如 `10.0.0.0/8`）与 VPC 本地更具体路由并存时，以更长前缀为准。
 - **`replace-route` 失败**：与路由语义或 AWS 限制冲突时，CLI 可能报错；脚本启用了 `set -e`，失败会导致退出，需按报错调整 CIDR 或设计。

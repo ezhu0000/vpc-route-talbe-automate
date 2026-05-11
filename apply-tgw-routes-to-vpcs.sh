@@ -302,6 +302,51 @@ apply_one_rtb_cidr() {
   esac
 }
 
+# 写入后核对每条 (路由表, CIDR) 是否指向所选 TGW。
+verify_routes_after_apply() {
+  local vpc rtb cidr st desc ok=0 miss=0 bad=0
+  local -a v_rtbs=()
+  echo
+  echo "========== 配置后验证（describe-route-tables） =========="
+  if [[ "$DRY_RUN" == "1" ]]; then
+    warn "当前为 DRY_RUN：未写入变更，以下为验证时刻云端实际状态。"
+  fi
+  for vpc in "${VPC_IDS[@]}"; do
+    echo
+    info "VPC $vpc"
+    v_rtbs=()
+    mapfile -t v_rtbs < <(list_route_tables_for_vpc "$REGION" "$vpc")
+    for rtb in "${v_rtbs[@]}"; do
+      for cidr in "${CIDRS[@]}"; do
+        st="$(route_status_for_cidr "$REGION" "$rtb" "$cidr" "$TGW_ID")"
+        case "$st" in
+          same_tgw)
+            info "  $rtb  $cidr  -> OK（下一跳为所选 TGW）"
+            ok=$((ok + 1))
+            ;;
+          none)
+            warn "  $rtb  $cidr  -> 缺失（无该目的网段路由）"
+            miss=$((miss + 1))
+            ;;
+          conflict*)
+            desc="${st#conflict|}"
+            warn "  $rtb  $cidr  -> 非所选 TGW（$desc）"
+            bad=$((bad + 1))
+            ;;
+          *)
+            die "验证时未知状态: $st"
+            ;;
+        esac
+      done
+    done
+  done
+  echo
+  info "验证汇总: 指向所选 TGW=${ok} 条, 缺失=${miss} 条, 其他下一跳=${bad} 条"
+  if [[ "$DRY_RUN" != "1" ]] && ((miss > 0 || bad > 0)); then
+    warn "存在未指向所选 TGW 的项：可能为跳过冲突、API 失败或传播延迟。"
+  fi
+}
+
 main() {
   parse_args "$@"
   [[ -n "$REGION" ]] || die "缺少 --region"
@@ -351,6 +396,8 @@ main() {
       done
     done
   done
+
+  verify_routes_after_apply
 
   info "完成。"
 }
