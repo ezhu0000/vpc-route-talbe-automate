@@ -33,18 +33,26 @@ Transit Gateway 侧路由由 TGW/BGP 等机制维护，**VPC 子网路由表不�
 | 交互 | [batch-tgw-vpc-routes.sh](https://github.com/ezhu0000/vpc-route-talbe-automate/blob/main/batch-tgw-vpc-routes.sh) | `https://raw.githubusercontent.com/ezhu0000/vpc-route-talbe-automate/main/batch-tgw-vpc-routes.sh` |
 | 非交互 | [apply-tgw-routes-to-vpcs.sh](https://github.com/ezhu0000/vpc-route-talbe-automate/blob/main/apply-tgw-routes-to-vpcs.sh) | `https://raw.githubusercontent.com/ezhu0000/vpc-route-talbe-automate/main/apply-tgw-routes-to-vpcs.sh` |
 
-示例（与 [README.md](https://github.com/ezhu0000/vpc-route-talbe-automate/blob/main/README.md) 中一致）：
+### `batch-tgw-vpc-routes.sh`：浏览与下载
+
+- **GitHub 源码页（blob，浏览器打开）**：[github.com/ezhu0000/vpc-route-talbe-automate/blob/main/batch-tgw-vpc-routes.sh](https://github.com/ezhu0000/vpc-route-talbe-automate/blob/main/batch-tgw-vpc-routes.sh)
+- **终端用 curl 下载**：`blob` 链接返回网页，请改用下方 **raw** 地址（与上页为同一文件，见 [raw 直链](https://raw.githubusercontent.com/ezhu0000/vpc-route-talbe-automate/main/batch-tgw-vpc-routes.sh)）。
 
 ```bash
 curl -fsSL -o batch-tgw-vpc-routes.sh \
   https://raw.githubusercontent.com/ezhu0000/vpc-route-talbe-automate/main/batch-tgw-vpc-routes.sh
 chmod +x batch-tgw-vpc-routes.sh
+```
 
-# 可选
+### `apply-tgw-routes-to-vpcs.sh`（可选）
+
+```bash
 curl -fsSL -o apply-tgw-routes-to-vpcs.sh \
   https://raw.githubusercontent.com/ezhu0000/vpc-route-talbe-automate/main/apply-tgw-routes-to-vpcs.sh
 chmod +x apply-tgw-routes-to-vpcs.sh
 ```
+
+以上内容与仓库根目录 [README.md](https://github.com/ezhu0000/vpc-route-talbe-automate/blob/main/README.md) 中的下载示例一致。
 
 ## 脚本对照
 
