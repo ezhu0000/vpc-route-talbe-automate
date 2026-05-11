@@ -139,12 +139,27 @@ read_cidrs_into_array() {
   info "已读入 ${#CIDRS[@]} 条 CIDR: ${CIDRS[*]}"
 }
 
+# 交互提示优先从 /dev/tty 读取，避免 stdin 已 EOF 或与 CIDR 共用 fd 时，set -e 因 read 失败在「确认执行」等处静默退出。
+read_interactive() {
+  local prompt="$1"
+  local -n _ri_out="$2"
+  if [[ -r /dev/tty ]]; then
+    IFS= read -r -p "$prompt" _ri_out < /dev/tty || return 1
+  else
+    IFS= read -r -p "$prompt" _ri_out || return 1
+  fi
+}
+
 prompt_yn() {
   local msg="$1" d="${2:-n}"
   local hint="[y/N]"
   [[ "$d" == "y" ]] && hint="[Y/n]"
+  local a
   while true; do
-    read -r -p "$msg $hint " a
+    if ! read_interactive "$msg $hint " a; then
+      warn "无法读取 y/n（输入已结束或非交互环境），视为「否」。"
+      return 1
+    fi
     a="${a:-$d}"
     case "${a,,}" in
       y|yes) return 0 ;;
@@ -316,7 +331,10 @@ select_from_menu() {
   done
   local pick
   while true; do
-    read -r -p "请输入序号 (1-${#rows[@]}): " pick >&2
+    if ! read_interactive "请输入序号 (1-${#rows[@]}): " pick; then
+      echo "读取输入失败，请重试。" >&2
+      continue
+    fi
     [[ "$pick" =~ ^[0-9]+$ ]] || { echo "请输入数字" >&2; continue; }
     (( pick >= 1 && pick <= ${#rows[@]} )) || { echo "序号超出范围" >&2; continue; }
     printf '%s\n' "${rows[$((pick-1))]}"
@@ -332,7 +350,10 @@ read_multi_vpc_selection() {
   while true; do
     echo
     echo "请选择要操作的 VPC：多个序号用逗号或空格分隔；输入 all 表示全选。"
-    read -r -p "序号 (1-${#VPC_IDS[@]}): " line || true
+    if ! read_interactive "序号 (1-${#VPC_IDS[@]}): " line; then
+      echo "读取输入失败，请重试。"
+      continue
+    fi
     line="$(trim "$line")"
     if [[ -z "$line" ]]; then
       echo "请输入至少一个序号，或 all。"
@@ -453,7 +474,11 @@ main() {
   echo "  1) 逐项询问（默认）"
   echo "  2) 全部跳过冲突（不修改已有路由）"
   echo "  3) 全部替换为指向所选 TGW（replace-route）"
-  read -r -p "请选择 [1/2/3] (默认 1): " POLICY
+  local POLICY
+  if ! read_interactive "请选择 [1/2/3] (默认 1): " POLICY; then
+    POLICY="1"
+    warn "未读到策略输入，使用默认 1（逐项询问）。"
+  fi
   POLICY="${POLICY:-1}"
   [[ "$POLICY" =~ ^[123]$ ]] || die "无效策略: $POLICY"
 
@@ -464,6 +489,8 @@ main() {
   echo "  TGW:    $TGW_ID"
   echo "  CIDR:   ${CIDRS[*]}"
   [[ "$DRY_RUN" == "1" ]] && echo "  模式:   干跑（不写 API 变更）"
+  echo
+  info "若确认将调用 AWS create-route / replace-route；请输入 y。"
   prompt_yn "确认执行？" "n" || { warn "已取消（未写入路由）。"; exit 0; }
 
   local cidr st desc action
@@ -493,8 +520,12 @@ main() {
               1)
                 echo "  处理方式: [s]跳过  [r]替换为TGW  [a]中止整个脚本"
                 while true; do
-                  read -r -p "  请选择 s/r/a: " a
-                  case "${a,,}" in
+                  if ! read_interactive "  请选择 s/r/a: " REPLY; then
+                    warn "  读取失败，按跳过处理。"
+                    action="skip"
+                    break
+                  fi
+                  case "${REPLY,,}" in
                     s) action="skip"; break ;;
                     r) action="replace"; break ;;
                     a) action="abort"; break ;;
