@@ -1,4 +1,9 @@
-.DS_Store
+# OS / editor
 Thumbs.db
+Desktop.ini
+.DS_Store
 *.swp
+*.swo
 *~
+.idea/
+.vscode/
