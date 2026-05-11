@@ -1,9 +1,8 @@
-# OS / editor
-Thumbs.db
-Desktop.ini
 .DS_Store
+Thumbs.db
 *.swp
-*.swo
 *~
-.idea/
-.vscode/
+
+# 仅跟踪本仓库脚本与文档；本地资料与旧目录不纳入版本库
+背景资料/
+tgw-vpc-routes/

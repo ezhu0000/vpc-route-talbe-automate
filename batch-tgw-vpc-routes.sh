@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# CloudShell / Bash: 按 VPC 批量为关联路由表添加指向 Transit Gateway 的 IPv4 路由。
+# CloudShell / Bash: 按 VPC（可多选）批量为关联路由表添加指向 Transit Gateway 的 IPv4 路由。
+# 交互流程: 选区域 → 列 VPC → 多选 VPC → 列 TGW 并选择 → 输入 CIDR 列表 → 冲突策略 → 确认执行。
 # - 默认区域: us-west-2, us-east-2（可通过环境变量 REGIONS 覆盖）
 # - 冲突检测: 同目的 CIDR 已存在且下一跳不是所选 TGW 时提示，并可选择跳过/替换/中止
 # - TGW: 从当前区域动态列举，交互选择
@@ -27,6 +28,8 @@ warn() { echo "[警告] $*" >&2; }
 usage() {
   cat <<'EOF' >&2
 用法: batch-tgw-vpc-routes.sh [选项]
+
+交互流程: 选择区域 → 列出并多选 VPC（序号可用逗号或空格分隔，或输入 all 全选）→ 选择 TGW → 输入 CIDR 列表 → 冲突策略 → 确认执行。
 
   -n, --dry-run              仅预览，不执行 create-route / replace-route
   -r, --regions <列表>       候选区域，逗号或空格分隔，例: ap-northeast-1 或 us-west-2,us-east-2
@@ -266,6 +269,56 @@ select_from_menu() {
   done
 }
 
+# 根据与列表相同顺序的 VPC_IDS，解析用户输入，写入全局数组 SELECTED_VPCS（VpcId，去重保序）。
+read_multi_vpc_selection() {
+  local line norm t
+  local -a toks idxs
+  local -A seen
+  while true; do
+    echo
+    echo "请选择要操作的 VPC：多个序号用逗号或空格分隔；输入 all 表示全选。"
+    read -r -p "序号 (1-${#VPC_IDS[@]}): " line || true
+    line="$(trim "$line")"
+    if [[ -z "$line" ]]; then
+      echo "请输入至少一个序号，或 all。"
+      continue
+    fi
+    if [[ "${line,,}" == "all" ]]; then
+      SELECTED_VPCS=("${VPC_IDS[@]}")
+      return
+    fi
+    norm="${line//,/ }"
+    read -ra toks <<< "$norm"
+    idxs=()
+    local bad=0
+    for t in "${toks[@]}"; do
+      t="$(trim "$t")"
+      [[ -z "$t" ]] && continue
+      if ! [[ "$t" =~ ^[0-9]+$ ]]; then
+        echo "无效序号（需为数字）: $t"
+        bad=1
+        break
+      fi
+      if (( t < 1 || t > ${#VPC_IDS[@]} )); then
+        echo "序号超出范围: $t（有效 1-${#VPC_IDS[@]}）"
+        bad=1
+        break
+      fi
+      idxs+=("$t")
+    done
+    [[ "$bad" == 1 ]] && continue
+    [[ ${#idxs[@]} -eq 0 ]] && { echo "未解析到任何序号。"; continue; }
+    seen=()
+    SELECTED_VPCS=()
+    for t in "${idxs[@]}"; do
+      [[ -n "${seen[$t]+x}" ]] && continue
+      seen[$t]=1
+      SELECTED_VPCS+=("${VPC_IDS[$((t-1))]}")
+    done
+    return
+  done
+}
+
 main() {
   info "区域列表: ${REGIONS[*]}"
   [[ "$DRY_RUN" == "1" ]] && warn "DRY_RUN=1：不会执行 create-route / replace-route"
@@ -297,16 +350,8 @@ main() {
     printf '%-22s %-28s %-18s %s\n' "$vid" "$name" "$cidr" "$typ"
   done
 
-  echo
-  local vpc_pick_idx
-  while true; do
-    read -r -p "请输入要操作的 VPC 序号 (1-${#VPC_IDS[@]}): " vpc_pick_idx
-    [[ "$vpc_pick_idx" =~ ^[0-9]+$ ]] || { echo "请输入数字"; continue; }
-    (( vpc_pick_idx >= 1 && vpc_pick_idx <= ${#VPC_IDS[@]} )) || { echo "序号超出范围"; continue; }
-    break
-  done
-  VPC_ID="${VPC_IDS[$((vpc_pick_idx-1))]}"
-  info "已选 VPC: $VPC_ID"
+  read_multi_vpc_selection
+  info "已选 VPC（${#SELECTED_VPCS[@]} 个）: ${SELECTED_VPCS[*]}"
 
   echo
   info "列举当前区域可用的 Transit Gateway（State=available）"
@@ -318,8 +363,15 @@ main() {
   TGW_ID="$(echo "$tgw_line" | awk -F'\t' '{print $1}')"
   info "已选 TGW: $TGW_ID"
 
-  if ! attachment_ok_for_vpc_tgw "$REGION" "$VPC_ID" "$TGW_ID"; then
-    warn "未检测到该 VPC 与所选 TGW 的可用/挂起中的 VPC Attachment（resource-id=$VPC_ID）。"
+  local VPC_ID
+  local -a missing_attach=()
+  for VPC_ID in "${SELECTED_VPCS[@]}"; do
+    if ! attachment_ok_for_vpc_tgw "$REGION" "$VPC_ID" "$TGW_ID"; then
+      missing_attach+=("$VPC_ID")
+    fi
+  done
+  if [[ ${#missing_attach[@]} -gt 0 ]]; then
+    warn "以下 VPC 未检测到与所选 TGW 的可用/挂起中的 VPC Attachment: ${missing_attach[*]}"
     warn "继续执行可能因无 Attachment 导致 create-route 失败。建议先在 TGW 上完成 VPC 挂载。"
     prompt_yn "仍要继续？" "n" || exit 0
   fi
@@ -327,15 +379,19 @@ main() {
   read_cidrs_into_array
 
   echo
-  info "以下路由表属于 VPC $VPC_ID ："
-  mapfile -t RTBS < <(list_route_tables_for_vpc "$REGION" "$VPC_ID")
-  [[ ${#RTBS[@]} -eq 0 ]] && die "未找到关联路由表"
+  local rtb
+  for VPC_ID in "${SELECTED_VPCS[@]}"; do
+    info "以下路由表属于 VPC $VPC_ID ："
+    mapfile -t RTBS < <(list_route_tables_for_vpc "$REGION" "$VPC_ID")
+    [[ ${#RTBS[@]} -eq 0 ]] && die "VPC $VPC_ID 下未找到关联路由表"
 
-  printf '%s\n' "RouteTableId(main/subnet) Name 指向所选TGW的IPv4路由条数"
-  printf '%s\n' "------------------------------------------------------------------"
-  for rtb in "${RTBS[@]}"; do
-    describe_rtb_one_line "$REGION" "$rtb" "$TGW_ID"
-  done | column -t -s $'\t' 2>/dev/null || true
+    printf '%s\n' "RouteTableId(main/subnet) Name 指向所选TGW的IPv4路由条数"
+    printf '%s\n' "------------------------------------------------------------------"
+    for rtb in "${RTBS[@]}"; do
+      describe_rtb_one_line "$REGION" "$rtb" "$TGW_ID"
+    done | column -t -s $'\t' 2>/dev/null || true
+    echo
+  done
 
   echo
   echo "全局冲突处理策略（当某 CIDR 在路由表中已存在且下一跳不是所选 TGW 时）:"
@@ -349,67 +405,71 @@ main() {
   echo
   echo "将要执行:"
   echo "  区域:   $REGION"
-  echo "  VPC:    $VPC_ID"
+  echo "  VPC:    ${SELECTED_VPCS[*]}"
   echo "  TGW:    $TGW_ID"
-  echo "  路由表: ${RTBS[*]}"
   echo "  CIDR:   ${CIDRS[*]}"
   [[ "$DRY_RUN" == "1" ]] && echo "  模式:   干跑（不写 API 变更）"
   prompt_yn "确认执行？" "n" || exit 0
 
-  local rtb cidr st desc action
-  for rtb in "${RTBS[@]}"; do
-    for cidr in "${CIDRS[@]}"; do
-      st="$(route_status_for_cidr "$REGION" "$rtb" "$cidr" "$TGW_ID")"
-      case "$st" in
-        none)
-          info "$rtb $cidr -> create-route (TGW)"
-          if [[ "$DRY_RUN" != "1" ]]; then
-            aws ec2 create-route --region "$REGION" --route-table-id "$rtb" \
-              --destination-cidr-block "$cidr" --transit-gateway-id "$TGW_ID" >/dev/null
-          fi
-          ;;
-        same_tgw)
-          info "$rtb $cidr -> 已存在且指向同一 TGW，跳过"
-          ;;
-        conflict*)
-          desc="${st#conflict|}"
-          warn "$rtb $cidr 冲突: 当前下一跳为 $desc"
-          action=""
-          case "$POLICY" in
-            1)
-              echo "  处理方式: [s]跳过  [r]替换为TGW  [a]中止整个脚本"
-              while true; do
-                read -r -p "  请选择 s/r/a: " a
-                case "${a,,}" in
-                  s) action="skip"; break ;;
-                  r) action="replace"; break ;;
-                  a) action="abort"; break ;;
-                  *) echo "  无效输入" ;;
-                esac
-              done
-              ;;
-            2) action="skip" ;;
-            3) action="replace" ;;
-          esac
-          if [[ "$action" == "abort" ]]; then
-            die "用户中止"
-          fi
-          if [[ "$action" == "skip" ]]; then
-            info "$rtb $cidr -> 跳过（保留原路由）"
-            continue
-          fi
-          if [[ "$action" == "replace" ]]; then
-            info "$rtb $cidr -> replace-route (TGW)"
+  local cidr st desc action
+  for VPC_ID in "${SELECTED_VPCS[@]}"; do
+    info "配置 VPC: $VPC_ID"
+    mapfile -t RTBS < <(list_route_tables_for_vpc "$REGION" "$VPC_ID")
+    [[ ${#RTBS[@]} -eq 0 ]] && die "VPC $VPC_ID 下未找到关联路由表"
+    for rtb in "${RTBS[@]}"; do
+      for cidr in "${CIDRS[@]}"; do
+        st="$(route_status_for_cidr "$REGION" "$rtb" "$cidr" "$TGW_ID")"
+        case "$st" in
+          none)
+            info "$VPC_ID $rtb $cidr -> create-route (TGW)"
             if [[ "$DRY_RUN" != "1" ]]; then
-              aws ec2 replace-route --region "$REGION" --route-table-id "$rtb" \
+              aws ec2 create-route --region "$REGION" --route-table-id "$rtb" \
                 --destination-cidr-block "$cidr" --transit-gateway-id "$TGW_ID" >/dev/null
             fi
-          fi
-          ;;
-        *)
-          die "未知路由状态: $st"
-          ;;
-      esac
+            ;;
+          same_tgw)
+            info "$VPC_ID $rtb $cidr -> 已存在且指向同一 TGW，跳过"
+            ;;
+          conflict*)
+            desc="${st#conflict|}"
+            warn "$VPC_ID $rtb $cidr 冲突: 当前下一跳为 $desc"
+            action=""
+            case "$POLICY" in
+              1)
+                echo "  处理方式: [s]跳过  [r]替换为TGW  [a]中止整个脚本"
+                while true; do
+                  read -r -p "  请选择 s/r/a: " a
+                  case "${a,,}" in
+                    s) action="skip"; break ;;
+                    r) action="replace"; break ;;
+                    a) action="abort"; break ;;
+                    *) echo "  无效输入" ;;
+                  esac
+                done
+                ;;
+              2) action="skip" ;;
+              3) action="replace" ;;
+            esac
+            if [[ "$action" == "abort" ]]; then
+              die "用户中止"
+            fi
+            if [[ "$action" == "skip" ]]; then
+              info "$VPC_ID $rtb $cidr -> 跳过（保留原路由）"
+              continue
+            fi
+            if [[ "$action" == "replace" ]]; then
+              info "$VPC_ID $rtb $cidr -> replace-route (TGW)"
+              if [[ "$DRY_RUN" != "1" ]]; then
+                aws ec2 replace-route --region "$REGION" --route-table-id "$rtb" \
+                  --destination-cidr-block "$cidr" --transit-gateway-id "$TGW_ID" >/dev/null
+              fi
+            fi
+            ;;
+          *)
+            die "未知路由状态: $st"
+            ;;
+        esac
+      done
     done
   done
 

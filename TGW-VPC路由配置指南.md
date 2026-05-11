@@ -1,6 +1,6 @@
 # TGW VPC 路由配置指南
 
-本文档说明本目录下两个 Bash 脚本的用途、交互流程、命令行参数与行为约定。适用于 **AWS CloudShell** 或已安装 **AWS CLI v2**、`bash` 4+、`jq` 的环境。
+本文档说明仓库根目录下两个 Bash 脚本的用途、交互流程、命令行参数与行为约定。适用于 **AWS CloudShell** 或已安装 **AWS CLI v2**、`bash` 4+、`jq` 的环境。
 
 ## 背景
 
@@ -127,13 +127,11 @@ chmod +x apply-tgw-routes-to-vpcs.sh
 - **最长前缀匹配**：汇总大网段（如 `10.0.0.0/8`）与 VPC 本地更具体路由并存时，以更长前缀为准。
 - **`replace-route` 失败**：与路由语义或 AWS 限制冲突时，CLI 可能报错；脚本启用了 `set -e`，失败会导致退出，需按报错调整 CIDR 或设计。
 
-## 目录内文件
+## 仓库根目录文件
 
 | 文件 | 说明 |
 |------|------|
 | `batch-tgw-vpc-routes.sh` | 交互式批量配置 |
 | `apply-tgw-routes-to-vpcs.sh` | 命令行参数批量配置 |
-| `README.md` | 仓库内简要说明 |
-| `TGW-VPC路由配置指南.md` | 本文档（独立说明） |
-
-上级目录中如有 `背景资料/`，可结合其中的网络方案讨论一并阅读。
+| `README.md` | 简要说明 |
+| `TGW-VPC路由配置指南.md` | 本文档 |
