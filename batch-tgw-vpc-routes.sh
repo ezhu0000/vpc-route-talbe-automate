@@ -140,13 +140,15 @@ read_cidrs_into_array() {
 }
 
 # 交互提示优先从 /dev/tty 读取，避免 stdin 已 EOF 或与 CIDR 共用 fd 时，set -e 因 read 失败在「确认执行」等处静默退出。
+# 交互提示：先显式写到 stderr，再 read（不用 read -p）。部分环境（如 AWS CloudShell）对 read -p 与 /dev/tty 组合时提示不刷新，看起来像「卡住」。
 read_interactive() {
   local prompt="$1"
   local -n _ri_out="$2"
+  printf '%s' "$prompt" >&2
   if [[ -r /dev/tty ]]; then
-    IFS= read -r -p "$prompt" _ri_out < /dev/tty || return 1
+    IFS= read -r _ri_out < /dev/tty || return 1
   else
-    IFS= read -r -p "$prompt" _ri_out || return 1
+    IFS= read -r _ri_out || return 1
   fi
 }
 
