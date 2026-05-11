@@ -26,15 +26,44 @@ CloudShell 默认满足上述条件。
 
 ## 使用方法
 
-1. 将 `batch-tgw-vpc-routes.sh` 上传到 CloudShell，或直接在编辑器中创建该文件。
-2. 赋予执行权限并运行：
+### 1. 获取脚本
+
+任选其一即可。
+
+**方式 A：在 AWS CloudShell（或本机终端）用命令行下载（推荐）**
+
+使用 GitHub 上的 **raw** 直链保存为本地文件：
+
+```bash
+curl -fsSL -o batch-tgw-vpc-routes.sh \
+  https://raw.githubusercontent.com/ezhu0000/vpc-route-talbe-automate/main/batch-tgw-vpc-routes.sh
+```
+
+若环境没有 `curl`，可用 `wget`：
+
+```bash
+wget -O batch-tgw-vpc-routes.sh \
+  https://raw.githubusercontent.com/ezhu0000/vpc-route-talbe-automate/main/batch-tgw-vpc-routes.sh
+```
+
+**方式 B：在浏览器中打开仓库页面后下载**
+
+在浏览器中打开脚本文件页面（可查看版本历史、也可通过页面上的 **Download raw file** / 另存为获取 `batch-tgw-vpc-routes.sh`）：
+
+[https://github.com/ezhu0000/vpc-route-talbe-automate/blob/main/batch-tgw-vpc-routes.sh](https://github.com/ezhu0000/vpc-route-talbe-automate/blob/main/batch-tgw-vpc-routes.sh)
+
+将下载得到的文件上传到 CloudShell 的 `$HOME` 等工作目录，与方式 A 得到的文件名保持一致即可。
+
+### 2. 赋予执行权限并运行
 
 ```bash
 chmod +x batch-tgw-vpc-routes.sh
 ./batch-tgw-vpc-routes.sh
 ```
 
-3. 按提示依次选择：**区域** → **VPC（序号）** → **Transit Gateway（序号）** → **输入多行 CIDR，空行结束** → **冲突处理策略** → **最终确认**。
+### 3. 按提示操作
+
+依次选择：**区域** → **VPC（序号）** → **Transit Gateway（序号）** → **输入多行 CIDR，空行结束** → **冲突处理策略** → **最终确认**。
 
 ### 环境变量
 
