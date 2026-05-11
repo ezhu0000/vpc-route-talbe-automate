@@ -37,19 +37,28 @@ chmod +x batch-tgw-vpc-routes.sh
 
 按提示选择：**区域** → **VPC** → **Transit Gateway** → **多行 CIDR（空行结束）** → **冲突策略** → **确认**。
 
-### 环境变量
+### 命令行参数（推荐）
 
-| 变量 | 说明 |
+| 选项 | 说明 |
 |------|------|
-| `REGIONS` | 可选。脚本启动时列出的区域列表，空格分隔。未设置时默认为 `us-west-2 us-east-2`。例：`REGIONS="us-east-1"` |
-| `DRY_RUN` | 设为 `1` 时只做展示与冲突判断，不调用 `create-route` / `replace-route`。 |
+| `-n` / `--dry-run` | 仅预览，不执行 `create-route` / `replace-route` |
+| `-r <列表>` / `--regions <列表>` / `--regions=<列表>` | 候选区域，逗号或空格分隔。若指定，则**不再**读取环境变量 `REGIONS` |
+| `-h` / `--help` | 打印说明并退出 |
 
 示例：
 
 ```bash
-DRY_RUN=1 ./batch-tgw-vpc-routes.sh
-REGIONS="ap-northeast-1" ./batch-tgw-vpc-routes.sh
+./batch-tgw-vpc-routes.sh --dry-run
+./batch-tgw-vpc-routes.sh --regions ap-northeast-1
+./batch-tgw-vpc-routes.sh -n -r us-west-2,us-east-2
 ```
+
+### 环境变量（可选，与命令行并存）
+
+| 变量 | 说明 |
+|------|------|
+| `REGIONS` | 未使用 `-r` / `--regions` 时生效。空格分隔。未设置时默认为 `us-west-2 us-east-2`。 |
+| `DRY_RUN` | 设为 `1` 等同 `--dry-run`；若命令行已加 `-n`，以命令行为准。 |
 
 ## 行为说明
 

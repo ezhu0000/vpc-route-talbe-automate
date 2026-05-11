@@ -6,9 +6,11 @@
 # - TGW: 从当前区域动态列举，交互选择
 #
 # 用法:
-#   ./batch-tgw-vpc-routes.sh              # 交互
-#   DRY_RUN=1 ./batch-tgw-vpc-routes.sh    # 仅预览
-#   REGIONS="us-west-2" ./batch-tgw-vpc-routes.sh
+#   ./batch-tgw-vpc-routes.sh
+#   ./batch-tgw-vpc-routes.sh --dry-run
+#   ./batch-tgw-vpc-routes.sh --regions us-west-2,us-east-2
+#   ./batch-tgw-vpc-routes.sh -n -r ap-northeast-1
+#   DRY_RUN=1 REGIONS="us-west-2" ./batch-tgw-vpc-routes.sh   # 环境变量仍可用；命令行优先于 REGIONS
 #
 set -euo pipefail
 
@@ -18,15 +20,67 @@ export AWS_PAGER="${AWS_PAGER:-}"
 DEFAULT_REGIONS=(us-west-2 us-east-2)
 DRY_RUN="${DRY_RUN:-0}"
 
-# shellcheck disable=SC2206
-REGIONS=( ${REGIONS:-} )
-if [[ ${#REGIONS[@]} -eq 0 ]]; then
-  REGIONS=("${DEFAULT_REGIONS[@]}")
-fi
-
 die() { echo "错误: $*" >&2; exit 1; }
 info() { echo "[信息] $*"; }
 warn() { echo "[警告] $*" >&2; }
+
+usage() {
+  cat <<'EOF' >&2
+用法: batch-tgw-vpc-routes.sh [选项]
+
+  -n, --dry-run              仅预览，不执行 create-route / replace-route
+  -r, --regions <列表>       候选区域，逗号或空格分隔，例: ap-northeast-1 或 us-west-2,us-east-2
+  -h, --help                 显示本说明并退出
+
+环境变量 DRY_RUN=1、REGIONS="a b" 仍可用；若传入 --regions / -r，则以命令行为准（忽略环境变量 REGIONS）。
+EOF
+}
+
+parse_args() {
+  REGIONS_CLI=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -n | --dry-run)
+        DRY_RUN=1
+        shift
+        ;;
+      -r | --regions)
+        [[ -n "${2:-}" ]] || die "选项 $1 需要参数（区域列表）"
+        REGIONS_CLI="$2"
+        shift 2
+        ;;
+      --regions=*)
+        REGIONS_CLI="${1#*=}"
+        [[ -n "$REGIONS_CLI" ]] || die "--regions= 后需要区域列表"
+        shift
+        ;;
+      -h | --help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "未知参数: $1（使用 --help）"
+        ;;
+    esac
+  done
+
+  if [[ -n "${REGIONS_CLI}" ]]; then
+    REGIONS=()
+    local _norm
+    _norm="${REGIONS_CLI//,/ }"
+    read -ra REGIONS <<< "${_norm}"
+    [[ ${#REGIONS[@]} -gt 0 ]] || die "--regions 解析后为空"
+  else
+    # shellcheck disable=SC2206
+    REGIONS=( ${REGIONS:-} )
+    if [[ ${#REGIONS[@]} -eq 0 ]]; then
+      REGIONS=("${DEFAULT_REGIONS[@]}")
+    fi
+  fi
+}
+
+parse_args "$@"
+unset REGIONS_CLI
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "未找到命令: $1（CloudShell 通常已预装 aws/jq）"
@@ -353,4 +407,4 @@ main() {
   info "完成。"
 }
 
-main "$@"
+main
