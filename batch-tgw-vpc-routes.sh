@@ -102,19 +102,28 @@ trim() {
   printf '%s' "$s"
 }
 
-# 从终端读取 CIDR 列表，写入全局数组 CIDRS（避免 mapfile 子 shell 吞掉提示且导致 die 不可靠）
+# 从终端读取 CIDR 列表，写入全局数组 CIDRS。
+# 注意：不可使用「每轮 while read < /dev/tty」——在 set -e 下，CloudShell 等对 /dev/tty 二次 read 易立即 EOF，
+# 导致 while 以失败状态结束从而整脚本被静默退出。此处对 /dev/tty 只打开一次（fd 3），并用 if ! read 规避 set -e。
 read_cidrs_into_array() {
   CIDRS=()
   echo >&2
-  echo >&2 "请输入对端/汇总 IPv4 CIDR，每行一个（例: 10.0.0.0/8）。空行结束输入；行首 # 为注释。"
+  echo >&2 "请输入对端/汇总 IPv4 CIDR，每行一个（例: 10.0.0.0/8）。"
+  echo >&2 "全部输入完成后请再单独按一次回车（空行）结束；行首 # 为注释。"
   local line
-  while IFS= read -r line < /dev/tty; do
+  exec 3</dev/tty || die "无法打开 /dev/tty，请在本机终端前台运行本脚本（勿重定向 stdin）"
+  while true; do
+    if ! IFS= read -r -u 3 line; then
+      [[ ${#CIDRS[@]} -gt 0 ]] && break
+      die "未输入任何 CIDR，或输入已结束"
+    fi
     line="$(trim "$line")"
     [[ -z "$line" ]] && break
     [[ "$line" == \#* ]] && continue
     is_valid_ipv4_cidr "$line" || die "无效 CIDR: $line"
     CIDRS+=("$line")
   done
+  exec 3<&-
   [[ ${#CIDRS[@]} -eq 0 ]] && die "未输入任何 CIDR"
 }
 
