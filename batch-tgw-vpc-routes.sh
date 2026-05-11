@@ -100,6 +100,7 @@ is_valid_ipv4_cidr() {
 
 trim() {
   local s="$1"
+  s="${s//$'\r'/}"
   s="${s#"${s%%[![:space:]]*}"}"
   s="${s%"${s##*[![:space:]]}"}"
   printf '%s' "$s"
@@ -107,14 +108,21 @@ trim() {
 
 # 从终端读取 CIDR 列表，写入全局数组 CIDRS。
 # 注意：不可使用「每轮 while read < /dev/tty」——在 set -e 下，CloudShell 等对 /dev/tty 二次 read 易立即 EOF，
-# 导致 while 以失败状态结束从而整脚本被静默退出。此处对 /dev/tty 只打开一次（fd 3），并用 if ! read 规避 set -e。
+# 导致 while 以失败状态结束从而整脚本被静默退出。此处对输入只打开一次（fd 3），并用 if ! read 规避 set -e。
+# /dev/tty 不可用时回退为复制 stdin（须为交互终端）；关闭 fd 3 时避免 set -e 误杀（部分环境 exec 关闭会非 0）。
 read_cidrs_into_array() {
   CIDRS=()
   echo >&2
   echo >&2 "请输入对端/汇总 IPv4 CIDR，每行一个（例: 10.0.0.0/8）。"
   echo >&2 "全部输入完成后请再单独按一次回车（空行）结束；行首 # 为注释。"
-  local line
-  exec 3</dev/tty || die "无法打开 /dev/tty，请在本机终端前台运行本脚本（勿重定向 stdin）"
+  local line opened=0
+  if exec 3</dev/tty 2>/dev/null; then
+    opened=1
+  elif [[ -t 0 ]]; then
+    exec 3<&0
+    opened=1
+  fi
+  [[ "$opened" == 1 ]] || die "无法打开输入：无可用 /dev/tty 且 stdin 非终端（请在前台终端运行，勿使用管道替代 stdin）"
   while true; do
     if ! IFS= read -r -u 3 line; then
       [[ ${#CIDRS[@]} -gt 0 ]] && break
@@ -126,8 +134,9 @@ read_cidrs_into_array() {
     is_valid_ipv4_cidr "$line" || die "无效 CIDR: $line"
     CIDRS+=("$line")
   done
-  exec 3<&-
+  { exec 3<&- ; } 2>/dev/null || true
   [[ ${#CIDRS[@]} -eq 0 ]] && die "未输入任何 CIDR"
+  info "已读入 ${#CIDRS[@]} 条 CIDR: ${CIDRS[*]}"
 }
 
 prompt_yn() {
@@ -373,7 +382,7 @@ main() {
   if [[ ${#missing_attach[@]} -gt 0 ]]; then
     warn "以下 VPC 未检测到与所选 TGW 的可用/挂起中的 VPC Attachment: ${missing_attach[*]}"
     warn "继续执行可能因无 Attachment 导致 create-route 失败。建议先在 TGW 上完成 VPC 挂载。"
-    prompt_yn "仍要继续？" "n" || exit 0
+    prompt_yn "仍要继续？" "n" || { warn "已取消（未写入路由）。"; exit 0; }
   fi
 
   read_cidrs_into_array
@@ -409,7 +418,7 @@ main() {
   echo "  TGW:    $TGW_ID"
   echo "  CIDR:   ${CIDRS[*]}"
   [[ "$DRY_RUN" == "1" ]] && echo "  模式:   干跑（不写 API 变更）"
-  prompt_yn "确认执行？" "n" || exit 0
+  prompt_yn "确认执行？" "n" || { warn "已取消（未写入路由）。"; exit 0; }
 
   local cidr st desc action
   for VPC_ID in "${SELECTED_VPCS[@]}"; do
