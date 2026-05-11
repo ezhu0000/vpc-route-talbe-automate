@@ -26,13 +26,26 @@ CloudShell 默认满足上述条件。
 
 ## 使用方法
 
-在 **AWS CloudShell** 中执行：
+脚本在仓库 **`main` 分支根目录**。GitHub 上浏览源文件：
+
+- 交互脚本：[batch-tgw-vpc-routes.sh](https://github.com/ezhu0000/vpc-route-talbe-automate/blob/main/batch-tgw-vpc-routes.sh)
+- 非交互脚本：[apply-tgw-routes-to-vpcs.sh](https://github.com/ezhu0000/vpc-route-talbe-automate/blob/main/apply-tgw-routes-to-vpcs.sh)
+
+在 **AWS CloudShell**（或任意终端）用 **`curl` 下载 raw 直链**（与上列 `blob` 页面为同一版本）：
 
 ```bash
 curl -fsSL -o batch-tgw-vpc-routes.sh \
   https://raw.githubusercontent.com/ezhu0000/vpc-route-talbe-automate/main/batch-tgw-vpc-routes.sh
 chmod +x batch-tgw-vpc-routes.sh
 ./batch-tgw-vpc-routes.sh
+```
+
+可选：一并拉取非交互脚本。
+
+```bash
+curl -fsSL -o apply-tgw-routes-to-vpcs.sh \
+  https://raw.githubusercontent.com/ezhu0000/vpc-route-talbe-automate/main/apply-tgw-routes-to-vpcs.sh
+chmod +x apply-tgw-routes-to-vpcs.sh
 ```
 
 按提示选择：**区域** → **多选 VPC**（序号逗号/空格分隔，或 `all` 全选）→ **Transit Gateway** → **多行 CIDR（空行结束）** → **冲突策略** → **确认**。

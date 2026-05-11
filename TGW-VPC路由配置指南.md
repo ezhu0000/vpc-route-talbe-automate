@@ -24,6 +24,28 @@ Transit Gateway 侧路由由 TGW/BGP 等机制维护，**VPC 子网路由表不�
 
 可按最小权限收紧到具体 VPC/TGW/路由表资源；快速验证时常用 `AmazonVPCFullAccess` 一类策略（生产环境请收紧）。
 
+## 从 GitHub 获取脚本
+
+仓库：[vpc-route-talbe-automate](https://github.com/ezhu0000/vpc-route-talbe-automate)（`main` 分支根目录）。
+
+| 脚本 | GitHub 浏览（blob） | raw 直链（供 `curl -o`） |
+|------|---------------------|-------------------------|
+| 交互 | [batch-tgw-vpc-routes.sh](https://github.com/ezhu0000/vpc-route-talbe-automate/blob/main/batch-tgw-vpc-routes.sh) | `https://raw.githubusercontent.com/ezhu0000/vpc-route-talbe-automate/main/batch-tgw-vpc-routes.sh` |
+| 非交互 | [apply-tgw-routes-to-vpcs.sh](https://github.com/ezhu0000/vpc-route-talbe-automate/blob/main/apply-tgw-routes-to-vpcs.sh) | `https://raw.githubusercontent.com/ezhu0000/vpc-route-talbe-automate/main/apply-tgw-routes-to-vpcs.sh` |
+
+示例（与 [README.md](https://github.com/ezhu0000/vpc-route-talbe-automate/blob/main/README.md) 中一致）：
+
+```bash
+curl -fsSL -o batch-tgw-vpc-routes.sh \
+  https://raw.githubusercontent.com/ezhu0000/vpc-route-talbe-automate/main/batch-tgw-vpc-routes.sh
+chmod +x batch-tgw-vpc-routes.sh
+
+# 可选
+curl -fsSL -o apply-tgw-routes-to-vpcs.sh \
+  https://raw.githubusercontent.com/ezhu0000/vpc-route-talbe-automate/main/apply-tgw-routes-to-vpcs.sh
+chmod +x apply-tgw-routes-to-vpcs.sh
+```
+
 ## 脚本对照
 
 | 文件 | 模式 | 适用场景 |
